@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Rhythm - Custom Key</title>
+    <title>3D Rhythm - Multi-Key</title>
     <style>
         body {
             margin: 0;
@@ -163,7 +163,7 @@
     <h2 style="color: #4facfe">3D RHYTHM</h2>
     <div class="control-group">JSON: <input type="file" id="json-input" accept=".json"></div>
     <div class="control-group">AUDIO: <input type="file" id="audio-input" accept="audio/*"></div>
-    <div class="control-group">JUDGMENT KEY: <div id="key-config-display">Space</div></div>
+    <div class="control-group">SYSTEM KEY: <div id="key-config-display">Space</div></div>
     <div class="control-group">SPEED: <input type="range" id="speed-input" min="20" max="80" value="20"></div>
     <div class="control-group">MUSIC VOLUME: <input type="range" id="volume-input" min="0" max="100" value="40"></div>
     <div class="control-group">SFX VOLUME: <input type="range" id="sfx-volume-input" min="0" max="100" value="50"></div>
@@ -193,7 +193,7 @@ let audioCtx, audioBuffer, sourceNode, gainNode;
 let chartData = null;
 let startTime = 0;
 let isPlaying = false;
-let isKeyPressed = false;
+let activeKeys = new Set(); // 押しっぱなし判定用のセット
 let combo = 0;
 let notes = [];
 let results = { perfect: 0, great: 0, good: 0, miss: 0 };
@@ -357,22 +357,28 @@ function update() {
 window.onkeydown = e => {
     if (isSettingKey) return;
 
+    // どの画面でもEscapeは共通
     if (e.code === 'Escape' && isPlaying) {
         backToSetup();
         return;
     }
 
-    if (e.code === configKey && !isPlaying) {
-        if (!scoreScreen.classList.contains('hidden')) {
-            backToSetup();
-        } else if (!setupScreen.classList.contains('hidden')) {
-            startGame();
+    // 非プレイ中：設定キーで画面遷移
+    if (!isPlaying) {
+        if (e.code === configKey) {
+            if (!scoreScreen.classList.contains('hidden')) {
+                backToSetup();
+            } else if (!setupScreen.classList.contains('hidden')) {
+                startGame();
+            }
         }
         return;
     }
 
-    if (e.code !== configKey || !isPlaying || isKeyPressed) return;
-    isKeyPressed = true;
+    // プレイ中：Escape以外の全てのキーが判定対象
+    if (activeKeys.has(e.code)) return; // キーリピート防止
+    activeKeys.add(e.code);
+
     const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
     
     const targetNote = notes
@@ -388,7 +394,9 @@ window.onkeydown = e => {
         let res = diff < 45 * win ? 'perfect' : diff < 90 * win ? 'great' : diff < 150 * win ? 'good' : 'miss';
         
         if (targetNote.type === 'hold' && res !== 'miss') {
-            targetNote.active = true; lastTickTime = (audioCtx.currentTime - startTime) * 1000;
+            targetNote.active = true; 
+            targetNote.holdKey = e.code; // どのキーでホールドを開始したか記憶
+            lastTickTime = (audioCtx.currentTime - startTime) * 1000;
         } else {
             targetNote.hit = true; if(targetNote.element) targetNote.element.remove();
         }
@@ -400,11 +408,14 @@ window.onkeydown = e => {
 
 window.onkeyup = e => {
     if (isSettingKey) return;
-    if (e.code !== configKey) return;
-    isKeyPressed = false;
+    activeKeys.delete(e.code);
+    
     if (!isPlaying) return;
+
+    // ホールド判定：そのホールドを開始したキーが離された場合
     const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
-    const holdNote = notes.find(n => n.active && !n.hit);
+    const holdNote = notes.find(n => n.active && !n.hit && n.holdKey === e.code);
+    
     if (holdNote) {
         const diff = Math.abs((holdNote.time + holdNote.duration) - targetTime);
         let res = diff < 200 ? 'perfect' : 'miss';
