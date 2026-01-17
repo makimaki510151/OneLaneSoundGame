@@ -165,7 +165,8 @@
     <div class="control-group">AUDIO: <input type="file" id="audio-input" accept="audio/*"></div>
     <div class="control-group">JUDGMENT KEY: <div id="key-config-display">Space</div></div>
     <div class="control-group">SPEED: <input type="range" id="speed-input" min="20" max="80" value="40"></div>
-    <div class="control-group">VOLUME: <input type="range" id="volume-input" min="0" max="100" value="70"></div>
+    <div class="control-group">MUSIC VOLUME: <input type="range" id="volume-input" min="0" max="100" value="70"></div>
+    <div class="control-group">SFX VOLUME: <input type="range" id="sfx-volume-input" min="0" max="100" value="50"></div>
     <div class="control-group">OFFSET: <input type="number" id="offset-input" value="0" style="width: 60px;"></div>
     <div class="control-group">
         HARDCORE: 
@@ -248,7 +249,8 @@ function playHitSound() {
     const g = audioCtx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.05 * (document.getElementById('volume-input').value / 100), audioCtx.currentTime);
+    const sfxVol = document.getElementById('sfx-volume-input').value / 100;
+    g.gain.setValueAtTime(0.1 * sfxVol, audioCtx.currentTime);
     g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.05);
     osc.connect(g).connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.05);
