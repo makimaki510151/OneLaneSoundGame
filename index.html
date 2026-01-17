@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Rhythm - Custom Key</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle at center, #0f172a 0%, #000 100%);
+            color: #fff;
+            font-family: sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        
+        #viewport {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            height: 75vh;
+            perspective: 350px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+        }
+
+        #game-container {
+            position: relative;
+            width: 200px;
+            height: 300%;
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 2px solid rgba(255, 255, 255, 0.1);
+            border-right: 2px solid rgba(255, 255, 255, 0.1);
+            transform: rotateX(72deg);
+            transform-origin: bottom;
+            overflow: visible;
+        }
+
+        #lane {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            bottom: 0;
+            background: repeating-linear-gradient(to top, transparent, transparent 195px, rgba(255,255,255,0.03) 200px);
+        }
+
+        #judgment-bar {
+            position: absolute;
+            bottom: 320px; 
+            width: 110%;
+            left: -5%;
+            height: 10px;
+            background: #fff;
+            box-shadow: 0 0 15px #4facfe;
+            z-index: 50;
+            pointer-events: none;
+        }
+        
+        #judgment-bar.active {
+            background: #00f2fe;
+            box-shadow: 0 0 30px #00f2fe, 0 0 50px #4facfe;
+        }
+
+        .note {
+            position: absolute;
+            width: 96%;
+            left: 2%;
+            height: 35px;
+            border-radius: 2px;
+            z-index: 2;
+            box-sizing: border-box;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+        }
+        .note-tap { background: linear-gradient(to bottom, #4facfe, #00f2fe); }
+        .note-hold { background: linear-gradient(to bottom, #f6d365, #fda085); }
+        .note-extra { background: linear-gradient(to bottom, #fa709a, #fee140); box-shadow: 0 0 20px #fa709a; }
+
+        #ui-layer {
+            position: absolute;
+            top: 5vh;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            z-index: 100;
+        }
+        #combo-text { font-size: 24px; font-weight: 900; text-shadow: 0 0 10px #4facfe; }
+        #judgment-text { font-size: 48px; font-weight: 900; height: 60px; }
+        
+        #setup-screen, #score-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+        .hidden { display: none !important; }
+        .control-group { margin: 8px; display: flex; align-items: center; gap: 10px; width: 300px; justify-content: space-between; }
+        .control-group input[type="range"] { width: 100px; }
+        
+        #key-config-display {
+            padding: 5px 10px;
+            background: #334155;
+            border: 1px solid #4facfe;
+            border-radius: 4px;
+            cursor: pointer;
+            min-width: 80px;
+            text-align: center;
+            font-weight: bold;
+            color: #00f2fe;
+        }
+
+        button {
+            padding: 15px 50px;
+            font-size: 18px;
+            background: #4facfe;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+        button:disabled { background: #444; }
+        .timing-detail { font-size: 14px; margin-top: 10px; color: #ccc; }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">
+    <div id="judgment-text"></div>
+    <div id="combo-text">0 COMBO</div>
+</div>
+
+<div id="viewport">
+    <div id="game-container">
+        <div id="lane"></div>
+        <div id="judgment-bar"></div>
+    </div>
+</div>
+
+<div id="setup-screen">
+    <h2 style="color: #4facfe">3D RHYTHM</h2>
+    <div class="control-group">JSON: <input type="file" id="json-input" accept=".json"></div>
+    <div class="control-group">AUDIO: <input type="file" id="audio-input" accept="audio/*"></div>
+    <div class="control-group">JUDGMENT KEY: <div id="key-config-display">Space</div></div>
+    <div class="control-group">SPEED: <input type="range" id="speed-input" min="20" max="80" value="40"></div>
+    <div class="control-group">VOLUME: <input type="range" id="volume-input" min="0" max="100" value="70"></div>
+    <div class="control-group">OFFSET: <input type="number" id="offset-input" value="0" style="width: 60px;"></div>
+    <button id="start-btn" disabled>START</button>
+</div>
+
+<div id="score-screen" class="hidden">
+    <h2>RESULT</h2>
+    <div id="final-score" style="font-size: 32px;"></div>
+    <div id="breakdown" style="margin: 10px 0;"></div>
+    <div id="timing-stats" style="border-top: 1px solid #444; padding-top: 15px; text-align: center;">
+        <div id="avg-error" style="font-size: 18px; color: #4facfe;"></div>
+        <div id="timing-counts" class="timing-detail"></div>
+    </div>
+    <button id="retry-btn" style="margin-top: 20px;">RETRY</button>
+</div>
+
+<script>
+let audioCtx, audioBuffer, sourceNode, gainNode;
+let chartData = null;
+let startTime = 0;
+let isPlaying = false;
+let isKeyPressed = false;
+let combo = 0;
+let notes = [];
+let results = { perfect: 0, great: 0, good: 0, miss: 0 };
+let timingErrors = [];
+let lastTickTime = 0;
+
+// 設定用変数
+let configKey = 'Space';
+const barPos = 350; 
+
+const laneElement = document.getElementById('lane');
+const startBtn = document.getElementById('start-btn');
+const barElement = document.getElementById('judgment-bar');
+const keyDisplay = document.getElementById('key-config-display');
+
+// キー設定処理
+keyDisplay.onclick = () => {
+    keyDisplay.innerText = "PUSH KEY...";
+    const handler = (e) => {
+        e.preventDefault();
+        configKey = e.code;
+        keyDisplay.innerText = configKey === 'Space' ? 'Space' : configKey;
+        window.removeEventListener('keydown', handler);
+    };
+    window.addEventListener('keydown', handler);
+};
+
+document.getElementById('json-input').onchange = e => {
+    const reader = new FileReader();
+    reader.onload = () => { try { chartData = JSON.parse(reader.result); checkReady(); } catch(err) { alert("JSON Error"); } };
+    reader.readAsText(e.target.files[0]);
+};
+document.getElementById('audio-input').onchange = e => {
+    const reader = new FileReader();
+    reader.onload = () => {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!audioCtx) audioCtx = new AC();
+        audioCtx.decodeAudioData(reader.result, buffer => { audioBuffer = buffer; checkReady(); });
+    };
+    reader.readAsArrayBuffer(e.target.files[0]);
+};
+function checkReady() { if (chartData && audioBuffer) startBtn.disabled = false; }
+
+function playHitSound() {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.05 * (document.getElementById('volume-input').value / 100), audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.05);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+}
+
+function flashBar() {
+    barElement.classList.add('active');
+    setTimeout(() => barElement.classList.remove('active'), 50);
+}
+
+startBtn.onclick = startGame;
+document.getElementById('retry-btn').onclick = () => {
+    document.getElementById('score-screen').classList.add('hidden');
+    document.getElementById('setup-screen').classList.remove('hidden');
+};
+
+function startGame() {
+    document.getElementById('setup-screen').classList.add('hidden');
+    combo = 0; results = { perfect: 0, great: 0, good: 0, miss: 0 };
+    timingErrors = [];
+    document.getElementById('combo-text').innerText = '0 COMBO';
+    document.getElementById('judgment-text').innerText = '';
+    laneElement.innerHTML = '';
+
+    if (sourceNode) sourceNode.stop();
+    sourceNode = audioCtx.createBufferSource();
+    gainNode = audioCtx.createGain();
+    sourceNode.buffer = audioBuffer;
+    gainNode.gain.value = document.getElementById('volume-input').value / 100;
+    sourceNode.connect(gainNode).connect(audioCtx.destination);
+    
+    const rawNotes = JSON.parse(JSON.stringify(chartData.notes));
+    const mergedNotes = [];
+    rawNotes.sort((a,b) => a.time - b.time).forEach(n => {
+        if (mergedNotes.length > 0 && mergedNotes[mergedNotes.length - 1].time === n.time) return;
+        mergedNotes.push(n);
+    });
+
+    notes = mergedNotes.map(n => ({ ...n, hit: false, element: null, active: false }));
+    isPlaying = true; startTime = audioCtx.currentTime;
+    sourceNode.start(0);
+    requestAnimationFrame(update);
+}
+
+function update() {
+    if (!isPlaying) return;
+    const currentTimeMs = (audioCtx.currentTime - startTime) * 1000;
+    const visualTime = currentTimeMs - parseInt(document.getElementById('offset-input').value);
+    const speed = parseFloat(document.getElementById('speed-input').value);
+
+    const hasTapNear = notes.some(n => !n.hit && n.type !== 'hold' && Math.abs(n.time - visualTime) < 150);
+
+    notes.forEach(note => {
+        if (note.hit) return;
+        const relativeTime = note.time - visualTime;
+
+        if (note.type === 'hold' && note.active && !hasTapNear) {
+            if (currentTimeMs - lastTickTime > 100) { applyJudgment('perfect', false); lastTickTime = currentTimeMs; }
+            if (visualTime > note.time + note.duration + 150) {
+                applyJudgment('miss'); note.hit = true;
+                if(note.element) note.element.remove();
+            }
+        }
+
+        if (relativeTime < 2500 && (relativeTime > -200 || note.active)) {
+            if (!note.element) {
+                note.element = document.createElement('div');
+                note.element.className = `note note-${note.type}`;
+                laneElement.appendChild(note.element);
+            }
+            let pos = note.active ? barPos : (relativeTime * (speed / 10)) + barPos;
+            note.element.style.bottom = pos + 'px';
+            if (note.type === 'hold') {
+                const h = note.active ? (note.time + note.duration - visualTime) : note.duration;
+                note.element.style.height = Math.max(0, h * (speed / 10)) + 'px';
+            }
+        } else if (note.element && !note.active) {
+            note.element.remove(); note.element = null;
+        }
+
+        if (!note.active && relativeTime < -150 && !note.hit) {
+            applyJudgment('miss'); note.hit = true;
+            if (note.element) note.element.remove();
+        }
+    });
+
+    if (visualTime > (notes.length > 0 ? notes[notes.length - 1].time + (notes[notes.length - 1].duration || 0) : 0) + 1000) {
+        showScore(); isPlaying = false;
+    } else requestAnimationFrame(update);
+}
+
+window.onkeydown = e => {
+    if (e.code !== configKey || !isPlaying || isKeyPressed) return;
+    isKeyPressed = true;
+    const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
+    
+    const targetNote = notes
+        .filter(n => !n.hit && !n.active && Math.abs(n.time - targetTime) < 200)
+        .sort((a, b) => a.time - b.time)[0];
+
+    if (targetNote) {
+        const error = targetTime - targetNote.time;
+        timingErrors.push(error);
+
+        const diff = Math.abs(error);
+        let win = targetNote.type === 'extra' ? 1.8 : 1.0;
+        let res = diff < 45 * win ? 'perfect' : diff < 90 * win ? 'great' : diff < 150 * win ? 'good' : 'miss';
+        
+        if (targetNote.type === 'hold' && res !== 'miss') {
+            targetNote.active = true; lastTickTime = (audioCtx.currentTime - startTime) * 1000;
+        } else {
+            targetNote.hit = true; if(targetNote.element) targetNote.element.remove();
+        }
+        applyJudgment(res); playHitSound(); flashBar();
+    } else {
+        flashBar();
+    }
+};
+
+window.onkeyup = e => {
+    if (e.code !== configKey) return;
+    isKeyPressed = false;
+    if (!isPlaying) return;
+    const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
+    const holdNote = notes.find(n => n.active && !n.hit);
+    if (holdNote) {
+        const diff = Math.abs((holdNote.time + holdNote.duration) - targetTime);
+        let res = diff < 200 ? 'perfect' : 'miss';
+        applyJudgment(res); holdNote.hit = true; holdNote.active = false;
+        if(holdNote.element) holdNote.element.remove();
+    }
+};
+
+function applyJudgment(res, record = true) {
+    if(record) results[res]++;
+    const jt = document.getElementById('judgment-text');
+    jt.innerText = res.toUpperCase();
+    jt.style.color = { perfect: '#feca57', great: '#ff9ff3', good: '#54a0ff', miss: '#ee5253' }[res];
+    if (res === 'miss') combo = 0; else combo++;
+    document.getElementById('combo-text').innerText = combo + ' COMBO';
+}
+
+function showScore() {
+    if (sourceNode) sourceNode.stop();
+    document.getElementById('score-screen').classList.remove('hidden');
+    
+    const total = results.perfect * 100 + results.great * 70 + results.good * 40;
+    document.getElementById('final-score').innerText = `TOTAL: ${total}`;
+    document.getElementById('breakdown').innerHTML = `P: ${results.perfect} / G: ${results.great} / g: ${results.good} / M: ${results.miss}`;
+
+    if (timingErrors.length > 0) {
+        const avg = timingErrors.reduce((a, b) => a + b, 0) / timingErrors.length;
+        const fast = timingErrors.filter(e => e < 0).length;
+        const slow = timingErrors.filter(e => e > 0).length;
+        const just = timingErrors.filter(e => Math.abs(e) < 1).length;
+
+        document.getElementById('avg-error').innerText = `AVERAGE: ${avg.toFixed(2)}ms`;
+        document.getElementById('timing-counts').innerHTML = 
+            `<span style="color:#ee5253">FAST: ${fast}</span> | ` +
+            `<span style="color:#feca57">JUST: ${just}</span> | ` +
+            `<span style="color:#54a0ff">SLOW: ${slow}</span>`;
+    } else {
+        document.getElementById('avg-error').innerText = "NO DATA";
+        document.getElementById('timing-counts').innerText = "";
+    }
+}
+</script>
+</body>
+</html>
