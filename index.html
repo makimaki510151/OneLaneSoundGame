@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Rhythm - Multi-Key</title>
+    <title>3D Rhythm - Mobile Ready</title>
     <style>
         body {
             margin: 0;
@@ -17,6 +17,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            touch-action: none;
         }
         
         #viewport {
@@ -101,9 +102,11 @@
             justify-content: center;
             align-items: center;
             z-index: 200;
+            overflow-y: auto;
+            padding: 20px 0;
         }
         .hidden { display: none !important; }
-        .control-group { margin: 8px; display: flex; align-items: center; gap: 10px; width: 300px; justify-content: space-between; }
+        .control-group { margin: 8px; display: flex; align-items: center; gap: 10px; width: 280px; justify-content: space-between; }
         .control-group input[type="range"] { width: 100px; }
         
         #key-config-display {
@@ -164,7 +167,7 @@
     <div class="control-group">JSON: <input type="file" id="json-input" accept=".json"></div>
     <div class="control-group">AUDIO: <input type="file" id="audio-input" accept="audio/*"></div>
     <div class="control-group">SYSTEM KEY: <div id="key-config-display">Space</div></div>
-    <div class="control-group">SPEED: <input type="range" id="speed-input" min="20" max="80" value="20"></div>
+    <div class="control-group">SPEED: <input type="range" id="speed-input" min="20" max="80" value="40"></div>
     <div class="control-group">MUSIC VOLUME: <input type="range" id="volume-input" min="0" max="100" value="40"></div>
     <div class="control-group">SFX VOLUME: <input type="range" id="sfx-volume-input" min="0" max="100" value="50"></div>
     <div class="control-group">OFFSET: <input type="number" id="offset-input" value="0" style="width: 60px;"></div>
@@ -193,14 +196,13 @@ let audioCtx, audioBuffer, sourceNode, gainNode;
 let chartData = null;
 let startTime = 0;
 let isPlaying = false;
-let activeKeys = new Set(); // 押しっぱなし判定用のセット
+let activeKeys = new Set();
 let combo = 0;
 let notes = [];
 let results = { perfect: 0, great: 0, good: 0, miss: 0 };
 let timingErrors = [];
 let lastTickTime = 0;
 
-// 設定用変数
 let configKey = 'Space';
 let isSettingKey = false;
 const barPos = 350; 
@@ -213,7 +215,6 @@ const scoreScreen = document.getElementById('score-screen');
 const setupScreen = document.getElementById('setup-screen');
 const hardcoreInput = document.getElementById('hardcore-input');
 
-// キー設定処理
 keyDisplay.onclick = () => {
     isSettingKey = true;
     keyDisplay.innerText = "PUSH KEY...";
@@ -354,18 +355,11 @@ function update() {
     } else if (isPlaying) requestAnimationFrame(update);
 }
 
-window.onkeydown = e => {
+function handleTriggerStart(triggerId) {
     if (isSettingKey) return;
 
-    // どの画面でもEscapeは共通
-    if (e.code === 'Escape' && isPlaying) {
-        backToSetup();
-        return;
-    }
-
-    // 非プレイ中：設定キーで画面遷移
     if (!isPlaying) {
-        if (e.code === configKey) {
+        if (triggerId === configKey || triggerId === 'TOUCH') {
             if (!scoreScreen.classList.contains('hidden')) {
                 backToSetup();
             } else if (!setupScreen.classList.contains('hidden')) {
@@ -375,46 +369,42 @@ window.onkeydown = e => {
         return;
     }
 
-    // プレイ中：Escape以外の全てのキーが判定対象
-    if (activeKeys.has(e.code)) return; // キーリピート防止
-    activeKeys.add(e.code);
+    if (triggerId !== 'Escape') {
+        if (activeKeys.has(triggerId)) return;
+        activeKeys.add(triggerId);
 
-    const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
-    
-    const targetNote = notes
-        .filter(n => !n.hit && !n.active && Math.abs(n.time - targetTime) < 200)
-        .sort((a, b) => a.time - b.time)[0];
+        const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
+        const targetNote = notes
+            .filter(n => !n.hit && !n.active && Math.abs(n.time - targetTime) < 200)
+            .sort((a, b) => a.time - b.time)[0];
 
-    if (targetNote) {
-        const error = targetTime - targetNote.time;
-        timingErrors.push(error);
-
-        const diff = Math.abs(error);
-        let win = targetNote.type === 'extra' ? 1.8 : 1.0;
-        let res = diff < 45 * win ? 'perfect' : diff < 90 * win ? 'great' : diff < 150 * win ? 'good' : 'miss';
-        
-        if (targetNote.type === 'hold' && res !== 'miss') {
-            targetNote.active = true; 
-            targetNote.holdKey = e.code; // どのキーでホールドを開始したか記憶
-            lastTickTime = (audioCtx.currentTime - startTime) * 1000;
+        if (targetNote) {
+            const error = targetTime - targetNote.time;
+            timingErrors.push(error);
+            const diff = Math.abs(error);
+            let win = targetNote.type === 'extra' ? 1.8 : 1.0;
+            let res = diff < 45 * win ? 'perfect' : diff < 90 * win ? 'great' : diff < 150 * win ? 'good' : 'miss';
+            
+            if (targetNote.type === 'hold' && res !== 'miss') {
+                targetNote.active = true; 
+                targetNote.holdKey = triggerId;
+                lastTickTime = (audioCtx.currentTime - startTime) * 1000;
+            } else {
+                targetNote.hit = true; if(targetNote.element) targetNote.element.remove();
+            }
+            applyJudgment(res); playHitSound(); flashBar();
         } else {
-            targetNote.hit = true; if(targetNote.element) targetNote.element.remove();
+            flashBar();
         }
-        applyJudgment(res); playHitSound(); flashBar();
-    } else {
-        flashBar();
     }
-};
+}
 
-window.onkeyup = e => {
-    if (isSettingKey) return;
-    activeKeys.delete(e.code);
-    
+function handleTriggerEnd(triggerId) {
+    activeKeys.delete(triggerId);
     if (!isPlaying) return;
 
-    // ホールド判定：そのホールドを開始したキーが離された場合
     const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
-    const holdNote = notes.find(n => n.active && !n.hit && n.holdKey === e.code);
+    const holdNote = notes.find(n => n.active && !n.hit && n.holdKey === triggerId);
     
     if (holdNote) {
         const diff = Math.abs((holdNote.time + holdNote.duration) - targetTime);
@@ -422,7 +412,23 @@ window.onkeyup = e => {
         applyJudgment(res); holdNote.hit = true; holdNote.active = false;
         if(holdNote.element) holdNote.element.remove();
     }
-};
+}
+
+window.addEventListener('keydown', e => {
+    if (e.code === 'Escape' && isPlaying) { backToSetup(); return; }
+    handleTriggerStart(e.code);
+});
+window.addEventListener('keyup', e => handleTriggerEnd(e.code));
+
+// タッチイベント追加
+window.addEventListener('touchstart', e => {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.id === 'key-config-display') return;
+    handleTriggerStart('TOUCH');
+}, { passive: false });
+
+window.addEventListener('touchend', e => {
+    handleTriggerEnd('TOUCH');
+}, { passive: false });
 
 function applyJudgment(res, record = true) {
     if(record) results[res]++;
@@ -431,7 +437,6 @@ function applyJudgment(res, record = true) {
     jt.style.color = { perfect: '#feca57', great: '#ff9ff3', good: '#54a0ff', miss: '#ee5253' }[res];
     if (res === 'miss') {
         combo = 0;
-        // ハードコアモード判定
         if (hardcoreInput.checked && isPlaying) {
             isPlaying = false;
             document.getElementById('result-title').innerText = 'GAME OVER (HARDCORE)';
@@ -446,7 +451,6 @@ function showScore() {
         try { sourceNode.stop(); } catch(e) {}
     }
     scoreScreen.classList.remove('hidden');
-    
     const total = results.perfect * 100 + results.great * 70 + results.good * 40;
     document.getElementById('final-score').innerText = `TOTAL: ${total}`;
     document.getElementById('breakdown').innerHTML = `P: ${results.perfect} / G: ${results.great} / g: ${results.good} / M: ${results.miss}`;
@@ -456,12 +460,9 @@ function showScore() {
         const fast = timingErrors.filter(e => e < 0).length;
         const slow = timingErrors.filter(e => e > 0).length;
         const just = timingErrors.filter(e => Math.abs(e) < 1).length;
-
         document.getElementById('avg-error').innerText = `AVERAGE: ${avg.toFixed(2)}ms`;
         document.getElementById('timing-counts').innerHTML = 
-            `<span style="color:#ee5253">FAST: ${fast}</span> | ` +
-            `<span style="color:#feca57">JUST: ${just}</span> | ` +
-            `<span style="color:#54a0ff">SLOW: ${slow}</span>`;
+            `<span style="color:#ee5253">FAST: ${fast}</span> | <span style="color:#feca57">JUST: ${just}</span> | <span style="color:#54a0ff">SLOW: ${slow}</span>`;
     } else {
         document.getElementById('avg-error').innerText = "NO DATA";
         document.getElementById('timing-counts').innerText = "";
