@@ -131,6 +131,18 @@
         }
         button:disabled { background: #444; }
         .timing-detail { font-size: 14px; margin-top: 10px; color: #ccc; }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .checkbox-container input {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
     </style>
 </head>
 <body>
@@ -155,11 +167,17 @@
     <div class="control-group">SPEED: <input type="range" id="speed-input" min="20" max="80" value="40"></div>
     <div class="control-group">VOLUME: <input type="range" id="volume-input" min="0" max="100" value="70"></div>
     <div class="control-group">OFFSET: <input type="number" id="offset-input" value="0" style="width: 60px;"></div>
+    <div class="control-group">
+        HARDCORE: 
+        <label class="checkbox-container">
+            <input type="checkbox" id="hardcore-input">
+        </label>
+    </div>
     <button id="start-btn" disabled>START</button>
 </div>
 
 <div id="score-screen" class="hidden">
-    <h2>RESULT</h2>
+    <h2 id="result-title">RESULT</h2>
     <div id="final-score" style="font-size: 32px;"></div>
     <div id="breakdown" style="margin: 10px 0;"></div>
     <div id="timing-stats" style="border-top: 1px solid #444; padding-top: 15px; text-align: center;">
@@ -183,23 +201,29 @@ let lastTickTime = 0;
 
 // 設定用変数
 let configKey = 'Space';
+let isSettingKey = false;
 const barPos = 350; 
 
 const laneElement = document.getElementById('lane');
 const startBtn = document.getElementById('start-btn');
 const barElement = document.getElementById('judgment-bar');
 const keyDisplay = document.getElementById('key-config-display');
+const scoreScreen = document.getElementById('score-screen');
+const setupScreen = document.getElementById('setup-screen');
+const hardcoreInput = document.getElementById('hardcore-input');
 
 // キー設定処理
 keyDisplay.onclick = () => {
+    isSettingKey = true;
     keyDisplay.innerText = "PUSH KEY...";
     const handler = (e) => {
         e.preventDefault();
         configKey = e.code;
         keyDisplay.innerText = configKey === 'Space' ? 'Space' : configKey;
+        isSettingKey = false;
         window.removeEventListener('keydown', handler);
     };
-    window.addEventListener('keydown', handler);
+    window.addEventListener('keydown', handler, { once: true });
 };
 
 document.getElementById('json-input').onchange = e => {
@@ -236,20 +260,32 @@ function flashBar() {
 }
 
 startBtn.onclick = startGame;
-document.getElementById('retry-btn').onclick = () => {
-    document.getElementById('score-screen').classList.add('hidden');
-    document.getElementById('setup-screen').classList.remove('hidden');
-};
+
+function backToSetup() {
+    isPlaying = false;
+    if (sourceNode) {
+        try { sourceNode.stop(); } catch(e) {}
+    }
+    scoreScreen.classList.add('hidden');
+    setupScreen.classList.remove('hidden');
+    laneElement.innerHTML = '';
+}
+
+document.getElementById('retry-btn').onclick = backToSetup;
 
 function startGame() {
-    document.getElementById('setup-screen').classList.add('hidden');
+    if (startBtn.disabled) return;
+    setupScreen.classList.add('hidden');
     combo = 0; results = { perfect: 0, great: 0, good: 0, miss: 0 };
     timingErrors = [];
     document.getElementById('combo-text').innerText = '0 COMBO';
     document.getElementById('judgment-text').innerText = '';
+    document.getElementById('result-title').innerText = 'RESULT';
     laneElement.innerHTML = '';
 
-    if (sourceNode) sourceNode.stop();
+    if (sourceNode) {
+        try { sourceNode.stop(); } catch(e) {}
+    }
     sourceNode = audioCtx.createBufferSource();
     gainNode = audioCtx.createGain();
     sourceNode.buffer = audioBuffer;
@@ -311,12 +347,28 @@ function update() {
         }
     });
 
-    if (visualTime > (notes.length > 0 ? notes[notes.length - 1].time + (notes[notes.length - 1].duration || 0) : 0) + 1000) {
+    if (isPlaying && visualTime > (notes.length > 0 ? notes[notes.length - 1].time + (notes[notes.length - 1].duration || 0) : 0) + 1000) {
         showScore(); isPlaying = false;
-    } else requestAnimationFrame(update);
+    } else if (isPlaying) requestAnimationFrame(update);
 }
 
 window.onkeydown = e => {
+    if (isSettingKey) return;
+
+    if (e.code === 'Escape' && isPlaying) {
+        backToSetup();
+        return;
+    }
+
+    if (e.code === configKey && !isPlaying) {
+        if (!scoreScreen.classList.contains('hidden')) {
+            backToSetup();
+        } else if (!setupScreen.classList.contains('hidden')) {
+            startGame();
+        }
+        return;
+    }
+
     if (e.code !== configKey || !isPlaying || isKeyPressed) return;
     isKeyPressed = true;
     const targetTime = (audioCtx.currentTime - startTime) * 1000 - parseInt(document.getElementById('offset-input').value);
@@ -345,6 +397,7 @@ window.onkeydown = e => {
 };
 
 window.onkeyup = e => {
+    if (isSettingKey) return;
     if (e.code !== configKey) return;
     isKeyPressed = false;
     if (!isPlaying) return;
@@ -363,13 +416,23 @@ function applyJudgment(res, record = true) {
     const jt = document.getElementById('judgment-text');
     jt.innerText = res.toUpperCase();
     jt.style.color = { perfect: '#feca57', great: '#ff9ff3', good: '#54a0ff', miss: '#ee5253' }[res];
-    if (res === 'miss') combo = 0; else combo++;
+    if (res === 'miss') {
+        combo = 0;
+        // ハードコアモード判定
+        if (hardcoreInput.checked && isPlaying) {
+            isPlaying = false;
+            document.getElementById('result-title').innerText = 'GAME OVER (HARDCORE)';
+            showScore();
+        }
+    } else combo++;
     document.getElementById('combo-text').innerText = combo + ' COMBO';
 }
 
 function showScore() {
-    if (sourceNode) sourceNode.stop();
-    document.getElementById('score-screen').classList.remove('hidden');
+    if (sourceNode) {
+        try { sourceNode.stop(); } catch(e) {}
+    }
+    scoreScreen.classList.remove('hidden');
     
     const total = results.perfect * 100 + results.great * 70 + results.good * 40;
     document.getElementById('final-score').innerText = `TOTAL: ${total}`;
